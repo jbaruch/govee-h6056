@@ -1,7 +1,7 @@
 """
 Govee Developer API v2 client for the H6056 Flow Plus light bars.
 
-Ground truth (see tile rules):
+Ground truth (see plugin rules):
 - Physical segments: 0..11 only. API accepts 0..14 but 12..14 are phantom (200 OK, no light).
 - Two physical bars, one API device:
     Yankee (top bar)    -> segments 0..5

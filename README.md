@@ -1,8 +1,8 @@
 # govee-h6056
 
-A [Tessl](https://tessl.io) tile encoding ground truth for the **Govee Flow Plus light bars (H6056)** — a 2-bar product that registers as a single API device and has three phantom segments the cloud docs don't warn you about.
+A [Tessl](https://tessl.io) plugin encoding ground truth for the **Govee Flow Plus light bars (H6056)** — a 2-bar product that registers as a single API device and has three phantom segments the cloud docs don't warn you about.
 
-## What this tile provides
+## What this plugin provides
 
 | Kind | Name | Purpose |
 |---|---|---|
@@ -19,7 +19,7 @@ is `0..11`, split across two bars:
 - **Yankee (top bar):** segments `0..5`
 - **Golf (bottom bar):** segments `6..11`
 
-The tile encodes those constraints so agents using it do not ship broken demos.
+The plugin encodes those constraints so agents using it do not ship broken demos.
 
 ## Install
 

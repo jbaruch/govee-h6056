@@ -81,7 +81,7 @@ set_segment_color([0,1,2,3,4,5,6,7,8,9,10,11], r=0, g=255, b=0)
 
 ## How to act
 
-1. Use `scripts/govee_control.py` as the reference client. Copy it or import from it — do not re-implement from the Govee docs without this tile's corrections.
+1. Use `scripts/govee_control.py` as the reference client. Copy it or import from it — do not re-implement from the Govee docs without this plugin's corrections.
 2. Always slice segments against the **physical** range `0..11`. Never iterate `range(15)` or `range(total_segments)` unless `total_segments == 12`.
 3. If a user asks to "turn everything green", issue one call with `"segment": [0,1,2,3,4,5,6,7,8,9,10,11]`, not two separate Yankee/Golf calls.
 4. When building per-bar animations (confidence meters, emotion colors), address each bar with its own index list so the mapping is explicit in the code.
