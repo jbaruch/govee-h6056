@@ -86,8 +86,19 @@ set_segment_color([0,1,2,3,4,5,6,7,8,9,10,11], r=0, g=255, b=0)
 3. If a user asks to "turn everything green", issue one call with `"segment": [0,1,2,3,4,5,6,7,8,9,10,11]`, not two separate Yankee/Golf calls.
 4. When building per-bar animations (confidence meters, emotion colors), address each bar with its own index list so the mapping is explicit in the code.
 5. **After every API call:** check for HTTP 429 and back off exponentially. A `200 OK` only confirms the request was accepted — it does **not** confirm lights changed. Phantom segments will silently succeed. Validate correctness by checking the segment list you sent, not the response body.
+6. **Don't trust `rgb=(0,0,0)` as "off".** Some firmware paths treat the packed int `0x000000` as a no-op and leave the segment in its previous state. If you need a segment visibly dark, use `rgb=(1,1,1)` (near-black, non-zero). At session end, always issue an explicit "all off" across segments `0..11` as the last command.
+
+## Session shutdown pattern
+
+Always close a session by clearing every physical segment. Use non-zero near-black
+to defeat the `(0,0,0)` no-op quirk:
+
+```python
+# End of run — after stopping any controller threads
+api.set_segments(device, range(12), (1, 1, 1))
+```
 
 ## Related
 
 - See rule `govee-h6056-gotchas` for quick in-context reminders.
-- Pairs well with `rate-limited-iot-debounce` when multiple updates per second are needed.
+- Pairs well with `iot-actuator-patterns` (debounce + quantization) when multiple updates per second are needed.
