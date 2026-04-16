@@ -1,0 +1,21 @@
+{
+  "context": "Tests whether the agent correctly avoids phantom segments 12-14 when addressing the H6056, uses a single batch API call for full-surface illumination rather than two separate bar calls, and documents the real physical segment count.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "No phantom segments",
+      "max_score": 40,
+      "description": "The script does NOT send segment indices 12, 13, or 14 in any API payload — the segment list for full illumination is exactly [0,1,2,3,4,5,6,7,8,9,10,11] or equivalent range(12)"
+    },
+    {
+      "name": "Single full-surface call",
+      "max_score": 35,
+      "description": "The 'light everything' function issues ONE API call with all 12 physical segments together, rather than two separate calls (one per bar)"
+    },
+    {
+      "name": "Correct segment count documented",
+      "max_score": 25,
+      "description": "notes.md (or inline comments) explicitly states that the physical segment count is 12, not 15, and explains why segments above 11 are excluded"
+    }
+  ]
+}

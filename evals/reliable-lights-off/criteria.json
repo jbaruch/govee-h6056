@@ -1,0 +1,31 @@
+{
+  "context": "Tests whether the agent correctly handles the RGB (0,0,0) no-op firmware quirk by using near-black (1,1,1) for segment clearing, ensures all 12 physical segments are addressed at shutdown, and avoids phantom segments.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Near-black for shutdown",
+      "max_score": 30,
+      "description": "The shutdown/clear function uses rgb=(1,1,1) or equivalent near-black (any non-zero RGB tuple where all components are > 0, matching the plugin's recommendation of (1,1,1)) instead of rgb=(0,0,0) when clearing segments at session end"
+    },
+    {
+      "name": "All 12 segments cleared",
+      "max_score": 25,
+      "description": "The shutdown call targets all physical segments 0..11 (e.g. range(12) or [0,1,2,...,11]) — does NOT stop at fewer than 12 or include indices 12+"
+    },
+    {
+      "name": "Zero-value quirk explained",
+      "max_score": 20,
+      "description": "A comment, docstring, or notes section explains that rgb=(0,0,0) may be treated as a no-op by some firmware and that non-zero near-black is used to reliably darken segments"
+    },
+    {
+      "name": "No phantom segments",
+      "max_score": 15,
+      "description": "No API call in the script includes segment indices 12, 13, or 14"
+    },
+    {
+      "name": "Shutdown on interrupt/exception",
+      "max_score": 10,
+      "description": "The script uses try/finally (or atexit or signal handler) so that the near-black clear-all call executes even when KeyboardInterrupt or an exception terminates the loop"
+    }
+  ]
+}

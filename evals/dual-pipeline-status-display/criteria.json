@@ -1,0 +1,26 @@
+{
+  "context": "Tests whether the agent applies per-bar addressing with the correct undocumented Yankee/Golf index mapping for each physical bar, avoids phantom segments, and documents the bar-to-pipeline mapping.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Yankee segments explicit",
+      "max_score": 30,
+      "description": "The top-bar (frontend) update uses the Yankee segment list (segments 0-5) explicitly or via YANKEE_SEGMENTS / api.yankee(), not a generic all-segment list"
+    },
+    {
+      "name": "Golf segments explicit",
+      "max_score": 30,
+      "description": "The bottom-bar (backend) update uses the Golf segment list (segments 6-11) explicitly or via GOLF_SEGMENTS / api.golf(), not a generic all-segment list"
+    },
+    {
+      "name": "No phantom segments",
+      "max_score": 20,
+      "description": "No call in build_status.py targets segment indices 12, 13, or 14"
+    },
+    {
+      "name": "Bar-to-pipeline mapping documented",
+      "max_score": 20,
+      "description": "design_notes.md (or inline comments) explicitly states which physical bar (Yankee/top vs. Golf/bottom) maps to which pipeline (frontend vs. backend)"
+    }
+  ]
+}
