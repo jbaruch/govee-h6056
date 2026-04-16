@@ -1,6 +1,6 @@
 {
   "name": "jbaruch/govee-h6056",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "summary": "Ground truth for Govee Flow Plus Light Bars (H6056): phantom segments, bar-to-segment mapping, API auth and rate limits.",
   "private": false,
   "rules": {
