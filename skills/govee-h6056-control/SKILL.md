@@ -1,6 +1,6 @@
 ---
 name: govee-h6056-control
-description: Controls Govee H6056 Flow Plus light bars (smart LED lights) via cloud REST API with correct segment-to-bar mapping (Yankee=0-5, Golf=6-11) and phantom-segment awareness (12-14 return 200 OK but do nothing). Use when the user wants to control Govee H6056 light bars, change LED light colors or brightness, set bar segment colors, or automate Govee smart lighting scenes.
+description: Controls Govee H6056 Flow Plus light bars (smart LED lights) via cloud REST API with correct segment-to-bar mapping (Yankee=0-5, Golf=6-11), phantom-segment awareness (12-14 return 200 OK but do nothing), correct "off" semantics (rgb=(1,1,1), not (0,0,0)), and rate-limit guidance (~7 req/min sustained → pair with iot-actuator-patterns-kotlin debounce). Use when the user wants to control Govee H6056 light bars, change LED light colors or brightness, set bar segment colors, or automate Govee smart lighting scenes.
 ---
 
 # Govee H6056 Control
@@ -13,92 +13,129 @@ Use this skill whenever you need to light up Govee Flow Plus light bars (H6056).
 - **API claims 15 segments** (`segmentedColorRgb`, min=1, max=15).
 - **Physical truth: 12 segments.** Indices `12`, `13`, `14` are **phantom**. The API returns `200 OK` when you address them; no light turns on. If you don't slice your ranges correctly, your "all on" commands will look broken on stage.
 - **Bar mapping** (top → bottom on each bar):
-  - `bar_a` (Yankee): segments `0, 1, 2, 3, 4, 5`
-  - `bar_b` (Golf):   segments `6, 7, 8, 9, 10, 11`
+  - `bar_a` (call it Yankee): segments `0, 1, 2, 3, 4, 5`
+  - `bar_b` (Golf):           segments `6, 7, 8, 9, 10, 11`
+  - Within each bar, **`segment[0]` is at the TOP**. Bottom-up fill on Yankee = lighting segments 5 → 0.
 - **Discovery is NOT mDNS.** Call `GET /router/api/v1/user/devices` with your API key to enumerate SKUs and device IDs.
 
 ## API contract
 
-- Base URL: `https://openapi.api.govee.com`
-- Auth: header `Govee-API-Key: <key>` (NOT bearer, NOT query param)
-- Control endpoint: `POST /router/api/v1/device/control`
-- Capability for per-segment color:
+- **Base URL:** `https://openapi.api.govee.com`
+- **Auth:** header `Govee-API-Key: <key>` (NOT bearer, NOT query param)
+- **Control endpoint:** `POST /router/api/v1/device/control`
+- **Capability for per-segment color:**
   - `type = "devices.capabilities.segment_color_setting"`
   - `instance = "segmentedColorRgb"`
-  - `value = {"segment": [<indices>], "rgb": <packed_int>}` where `rgb = (r<<16)|(g<<8)|b`
-- Rate limits: nominal ~10k/day. Sustained traffic above ~7 req/min trips 429s. Combining Yankee+Golf writes into one payload when possible keeps you out of trouble.
+  - `value = {"segment": [<indices>], "rgb": <packed_int>}` where `rgb = (r shl 16) or (g shl 8) or b`
+- **Rate limits:** nominal ~10k/day. Sustained traffic above ~7 req/min trips 429s silently — Govee often returns 200 but the device doesn't update. Pair every Govee call with `iot-actuator-patterns-kotlin`'s debounce controller (min-interval 1.2 s).
 
-## Minimal executable example
+## "Off" semantics
 
-```python
-import time
-import requests
+`rgb=(0,0,0)` packs to `0x000000`. Some firmware paths treat that as a no-op and **retain the prior segment state**. To reliably clear a segment, send `rgb=(1,1,1)` — near-black but non-zero. The user can't perceive the 1/255 brightness.
 
-API_KEY = "<your-govee-api-key>"
-DEVICE_ID = "<your-device-id>"  # from GET /router/api/v1/user/devices
-SKU = "H6056"
-BASE_URL = "https://openapi.api.govee.com"
+On session shutdown, always issue an explicit all-segments command:
 
-def pack_rgb(r, g, b):
-    return (r << 16) | (g << 8) | b
+```kotlin
+Runtime.getRuntime().addShutdownHook(Thread {
+    runBlocking { client.setSegments((0..11).toList(), Triple(1, 1, 1)) }
+})
+```
 
-def set_segment_color(segments, r, g, b, retries=3):
-    """Set the given segment indices to an RGB color. Never pass indices > 11."""
-    assert all(0 <= s <= 11 for s in segments), "Phantom segment (12-14) addressed!"
-    payload = {
-        "requestId": "govee-h6056-ctrl",
-        "payload": {
-            "sku": SKU,
-            "device": DEVICE_ID,
-            "capability": {
-                "type": "devices.capabilities.segment_color_setting",
-                "instance": "segmentedColorRgb",
-                "value": {
-                    "segment": segments,
-                    "rgb": pack_rgb(r, g, b)
-                }
-            }
-        }
+## Minimal Kotlin example
+
+```kotlin
+import io.ktor.client.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import kotlinx.coroutines.runBlocking
+import java.util.UUID
+
+class GoveeClient(
+    private val apiKey: String,
+    private val sku: String,        // "H6056"
+    private val device: String      // from GET /router/api/v1/user/devices
+) {
+    private val client = HttpClient(CIO)
+    private val base = "https://openapi.api.govee.com"
+
+    suspend fun setSegments(segments: List<Int>, rgb: Triple<Int, Int, Int>): Int {
+        val (r, g, b) = rgb
+        val packed = (r shl 16) or (g shl 8) or b
+        val segArr = segments.joinToString(",", "[", "]")
+        val payload = """
+            {"requestId":"${UUID.randomUUID()}",
+             "payload":{"sku":"$sku","device":"$device",
+              "capability":{"type":"devices.capabilities.segment_color_setting",
+                            "instance":"segmentedColorRgb",
+                            "value":{"segment":$segArr,"rgb":$packed}}}}
+        """.trimIndent()
+        return client.post("$base/router/api/v1/device/control") {
+            header("Content-Type", "application/json")
+            header("Govee-API-Key", apiKey)
+            setBody(payload)
+        }.status.value
     }
-    headers = {"Govee-API-Key": API_KEY, "Content-Type": "application/json"}
-    for attempt in range(retries):
-        resp = requests.post(f"{BASE_URL}/router/api/v1/device/control",
-                             json=payload, headers=headers, timeout=10)
-        if resp.status_code == 429:
-            wait = 2 ** attempt  # exponential backoff: 1s, 2s, 4s
-            time.sleep(wait)
-            continue
-        resp.raise_for_status()
-        # NOTE: A 200 OK does NOT confirm physical change — phantom segments
-        # (12-14) also return 200 OK but illuminate nothing. Trust the segment
-        # list you send, not the status code alone.
-        return resp.json()
-    raise RuntimeError("Rate limit not resolved after retries")
 
-# Turn all 12 physical segments green in one call:
-set_segment_color([0,1,2,3,4,5,6,7,8,9,10,11], r=0, g=255, b=0)
+    companion object {
+        // Use these constants, NOT raw indices, to stay phantom-safe and bar-aware
+        val YANKEE = (0..5).toList()
+        val GOLF = (6..11).toList()
+        val ALL_PHYSICAL = (0..11).toList()
+    }
+}
+
+fun main() = runBlocking {
+    val client = GoveeClient(
+        apiKey = System.getenv("GOVEE_API_KEY"),
+        sku = "H6056",
+        device = System.getenv("GOVEE_H6056_DEVICE")
+    )
+    // Light Yankee green, Golf red:
+    client.setSegments(GoveeClient.YANKEE, Triple(0, 200, 0))
+    client.setSegments(GoveeClient.GOLF, Triple(200, 0, 0))
+}
 ```
 
-## How to act
+## Bottom-up fill on Yankee
 
-1. Use [`scripts/govee_control.py`](../../scripts/govee_control.py) as the reference client. Copy it or import from it — do not re-implement from the Govee docs without this plugin's corrections.
-2. Always slice segments against the **physical** range `0..11`. Never iterate `range(15)` or `range(total_segments)` unless `total_segments == 12`.
-3. If a user asks to "turn everything green", issue one call with `"segment": [0,1,2,3,4,5,6,7,8,9,10,11]`, not two separate Yankee/Golf calls.
-4. When building per-bar animations (confidence meters, emotion colors), address each bar with its own index list so the mapping is explicit in the code.
-5. **After every API call:** check for HTTP 429 and back off exponentially. A `200 OK` only confirms the request was accepted — it does **not** confirm lights changed. Phantom segments will silently succeed. Validate correctness by checking the segment list you sent, not the response body.
-6. **Don't trust `rgb=(0,0,0)` as "off".** Some firmware paths treat the packed int `0x000000` as a no-op and leave the segment in its previous state. If you need a segment visibly dark, use `rgb=(1,1,1)` (near-black, non-zero). At session end, always issue an explicit "all off" across segments `0..11` as the last command.
+Because `segment[0]` is the TOP, a bottom-up "thermometer" fill means lighting from the high-index end:
 
-## Session shutdown pattern
+```kotlin
+fun yankeeBottomUp(lit: Int): IntRange = (6 - lit) until 6   // total=6
 
-Always close a session by clearing every physical segment. Use non-zero near-black
-to defeat the `(0,0,0)` no-op quirk:
-
-```python
-# End of run — after stopping any controller threads
-api.set_segments(device, range(12), (1, 1, 1))
+// lit=1 → segment 5 (just the bottom)
+// lit=3 → segments 3, 4, 5
+// lit=6 → segments 0..5 (full bar)
 ```
 
-## Related
+See `render-progress-bar-kotlin` for the full gradient pattern.
 
-- See rule `govee-h6056-gotchas` for quick in-context reminders.
-- Pairs well with `iot-actuator-patterns` (debounce + quantization) when multiple updates per second are needed.
+## Discovery
+
+```kotlin
+suspend fun discoverDevices(client: HttpClient, apiKey: String): List<Map<String, Any?>> {
+    val resp = client.get("https://openapi.api.govee.com/router/api/v1/user/devices") {
+        header("Govee-API-Key", apiKey)
+    }
+    // resp.bodyAsText() → {"code":200, "data":[{sku, device, deviceName, ...}], ...}
+    // Parse with kotlinx.serialization or Jackson; extract entries where sku == "H6056"
+    TODO("parse JSON, return entries")
+}
+```
+
+## Anti-patterns
+
+- ❌ Hardcoding `15` as the segment count — sends 3 wasted commands to phantom segments.
+- ❌ Splitting "thirds" as `0..4, 5..9, 10..14` for a semaphore — middle band spans Yankee + Golf, top band addresses phantoms.
+- ❌ `rgb=(0,0,0)` for "off" — silently no-ops on some firmware paths.
+- ❌ Calling the API inline from a 30 fps producer loop without debounce — Govee throttles silently, your producer blocks on network latency, demo framerate drops to 3 fps.
+- ❌ mDNS discovery — Govee H6056 doesn't broadcast mDNS. Use the cloud `/devices` endpoint.
+
+## Required environment
+
+```bash
+export GOVEE_API_KEY=<your-developer-api-key>   # from developer.govee.com
+export GOVEE_H6056_SKU=H6056
+export GOVEE_H6056_DEVICE=<the device-id field from /devices response>
+```
